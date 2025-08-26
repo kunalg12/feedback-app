@@ -88,7 +88,46 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning();
+      
+    // Create some demo accounts if this is the first user (admin)
+    if (isFirstUser) {
+      await this.createDemoAccounts();
+    }
+    
     return user;
+  }
+
+  async createDemoAccounts(): Promise<void> {
+    try {
+      // Create demo teacher account
+      await db.insert(users).values({
+        id: 'demo-teacher-1',
+        email: 'teacher@college.edu',
+        firstName: 'John',
+        lastName: 'Professor',
+        role: 'TEACHER',
+        department: 'Computer Science',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create demo student account
+      await db.insert(users).values({
+        id: 'demo-student-1', 
+        email: 'student@college.edu',
+        firstName: 'Jane',
+        lastName: 'Student',
+        role: 'STUDENT',
+        studentId: 'CS2024001',
+        department: 'Computer Science',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      console.log('Demo accounts created successfully');
+    } catch (error) {
+      console.log('Demo accounts already exist or creation failed:', error);
+    }
   }
 
   async getAllUsers(): Promise<User[]> {

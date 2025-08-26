@@ -13,6 +13,7 @@ import FeedbackFormBuilderPage from "@/pages/feedback-form-builder";
 import FeedbackSubmissionPage from "@/pages/feedback-submission";
 import AnalyticsReports from "@/pages/analytics-reports";
 import UserManagement from "@/pages/user-management";
+import RoleSelection from "@/pages/role-selection";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -35,6 +36,16 @@ function Router() {
       <Switch>
         <Route path="/" component={Landing} />
         <Route component={Landing} />
+      </Switch>
+    );
+  }
+
+  // If user is logged in but doesn't have a role set (new user), show role selection
+  if (user && (!user.role || !user.firstName)) {
+    return (
+      <Switch>
+        <Route path="/" component={RoleSelection} />
+        <Route component={RoleSelection} />
       </Switch>
     );
   }

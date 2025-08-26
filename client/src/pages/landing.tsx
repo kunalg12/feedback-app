@@ -27,9 +27,17 @@ export default function Landing() {
                 <p className="text-gray-600 mb-4">
                   Welcome to the Faculty Feedback System. Please sign in with your institutional account to continue.
                 </p>
-                <div className="bg-blue-50 p-3 rounded-lg text-sm text-gray-700">
-                  <p className="font-semibold mb-1">Getting Started:</p>
-                  <p>First user becomes Admin automatically. Admins can then create Teacher and Student accounts through the User Management panel.</p>
+                <div className="bg-blue-50 p-3 rounded-lg text-sm text-gray-700 space-y-2">
+                  <div>
+                    <p className="font-semibold mb-1">Getting Started:</p>
+                    <p>Sign in to create accounts or use these demo accounts:</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1 text-xs bg-white p-2 rounded border">
+                    <div><strong>Admin:</strong> First user (you) gets admin access</div>
+                    <div><strong>Teacher:</strong> teacher@college.edu</div>
+                    <div><strong>Student:</strong> student@college.edu</div>
+                  </div>
+                  <p className="text-xs">Demo accounts created automatically on first admin signup.</p>
                 </div>
               </div>
 
