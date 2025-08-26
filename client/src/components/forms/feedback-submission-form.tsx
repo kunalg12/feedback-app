@@ -10,7 +10,8 @@ import { Shield, Info } from "lucide-react";
 import { useSubmitFeedbackResponse } from "@/hooks/use-feedback-forms";
 import { feedbackResponseSchema, type FeedbackResponseInput } from "@/lib/validations";
 import { useToast } from "@/hooks/use-toast";
-import type { FeedbackForm, FeedbackQuestion } from "@/types";
+import type { FeedbackQuestion } from "@/types";
+import type { FeedbackForm } from "@shared/schema";
 
 interface FeedbackSubmissionFormProps {
   form: FeedbackForm & {

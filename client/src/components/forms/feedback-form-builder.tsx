@@ -63,6 +63,7 @@ export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilder
     try {
       await createForm.mutateAsync({
         ...data,
+        teacherId: "", // Will be set by backend based on authenticated user
         questions: data.questions,
       });
       

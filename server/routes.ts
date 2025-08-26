@@ -8,6 +8,7 @@ import {
   insertAttendanceRecordSchema,
   insertFeedbackFormSchema,
   insertFeedbackResponseSchema,
+  insertUserSchema,
 } from "@shared/schema";
 import { calculateAttendanceWeight } from "../client/src/lib/attendance-weight";
 
@@ -24,6 +25,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // User management routes (Admin only)
+  app.get('/api/users', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || user.role !== 'ADMIN') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.post('/api/users', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || user.role !== 'ADMIN') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const validatedData = insertUserSchema.parse(req.body);
+      const newUser = await storage.createUser(validatedData);
+      res.status(201).json(newUser);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  app.put('/api/users/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || user.role !== 'ADMIN') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      const validatedData = insertUserSchema.partial().parse(req.body);
+      const updatedUser = await storage.updateUser(id, validatedData);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete('/api/users/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || user.role !== 'ADMIN') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      await storage.deleteUser(id);
+      res.json({ message: "User deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user" });
     }
   });
 
@@ -117,8 +191,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = insertAttendanceRecordSchema.parse(req.body);
-      const attendancePercentage = validatedData.totalClasses > 0 
-        ? (validatedData.attendedClasses / validatedData.totalClasses) * 100 
+      const attendancePercentage = (validatedData.totalClasses || 0) > 0 
+        ? ((validatedData.attendedClasses || 0) / (validatedData.totalClasses || 0)) * 100 
         : 0;
 
       const attendance = await storage.updateAttendance({
@@ -262,6 +336,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching course feedback responses:", error);
       res.status(500).json({ message: "Failed to fetch course feedback responses" });
+    }
+  });
+
+  // Additional CRUD routes for courses
+  app.put('/api/courses/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      const validatedData = insertCourseSchema.partial().parse(req.body);
+      const updatedCourse = await storage.updateCourse(id, validatedData);
+      res.json(updatedCourse);
+    } catch (error) {
+      console.error("Error updating course:", error);
+      res.status(500).json({ message: "Failed to update course" });
+    }
+  });
+
+  app.delete('/api/courses/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      await storage.deleteCourse(id);
+      res.json({ message: "Course deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting course:", error);
+      res.status(500).json({ message: "Failed to delete course" });
+    }
+  });
+
+  // Additional CRUD routes for feedback forms
+  app.put('/api/feedback-forms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      const validatedData = insertFeedbackFormSchema.partial().parse(req.body);
+      const updatedForm = await storage.updateFeedbackForm(id, validatedData);
+      res.json(updatedForm);
+    } catch (error) {
+      console.error("Error updating feedback form:", error);
+      res.status(500).json({ message: "Failed to update feedback form" });
+    }
+  });
+
+  app.delete('/api/feedback-forms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { id } = req.params;
+      await storage.deleteFeedbackForm(id);
+      res.json({ message: "Feedback form deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting feedback form:", error);
+      res.status(500).json({ message: "Failed to delete feedback form" });
     }
   });
 

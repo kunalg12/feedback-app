@@ -12,6 +12,7 @@ import StudentDashboard from "@/pages/student-dashboard";
 import FeedbackFormBuilderPage from "@/pages/feedback-form-builder";
 import FeedbackSubmissionPage from "@/pages/feedback-submission";
 import AnalyticsReports from "@/pages/analytics-reports";
+import UserManagement from "@/pages/user-management";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -46,6 +47,7 @@ function Router() {
         <>
           <Route path="/" component={AdminDashboard} />
           <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/users" component={UserManagement} />
           <Route path="/admin/feedback-forms/new" component={FeedbackFormBuilderPage} />
           <Route path="/admin/reports" component={AnalyticsReports} />
         </>

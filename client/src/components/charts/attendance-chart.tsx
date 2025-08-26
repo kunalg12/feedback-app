@@ -46,11 +46,9 @@ export function AttendanceChart({ data, title = "Attendance Distribution", type 
                 <XAxis dataKey="range" />
                 <YAxis />
                 <Tooltip 
-                  formatter={[
-                    (value: number, name: string) => [
-                      name === 'count' ? `${value} students` : value.toFixed(2),
-                      name === 'count' ? 'Students' : 'Avg Score'
-                    ]
+                  formatter={(value: number, name: string) => [
+                    name === 'count' ? `${value} students` : value.toFixed(2),
+                    name === 'count' ? 'Students' : 'Avg Score'
                   ]}
                 />
                 <Bar dataKey="count" fill="#3b82f6" name="count" />
