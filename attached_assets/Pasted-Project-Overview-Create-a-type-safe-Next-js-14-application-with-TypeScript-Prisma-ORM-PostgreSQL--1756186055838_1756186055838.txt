@@ -1,0 +1,448 @@
+Project Overview
+Create a type-safe Next.js 14 application with TypeScript, Prisma ORM, PostgreSQL, and shadcn/ui for a college faculty feedback system. Deploy on campus intranet with role-based authentication and attendance-weighted feedback evaluation.
+Core Requirements
+1. Tech Stack
+
+Frontend: Next.js 14 (App Router), TypeScript, shadcn/ui, Tailwind CSS
+Backend: Next.js API routes, NextAuth.js v4, Prisma ORM
+Database: PostgreSQL with Prisma Client
+UI Library: shadcn/ui components
+Validation: Zod for schema validation
+State Management: React Query (TanStack Query) for server state
+
+2. Project Setup Commands
+bashnpx create-next-app@latest faculty-feedback-system --typescript --tailwind --eslint --app
+cd faculty-feedback-system
+npx shadcn-ui@latest init
+npx shadcn-ui@latest add button card form input label select textarea dialog alert badge table
+npm install prisma @prisma/client next-auth @auth/prisma-adapter bcryptjs zod @tanstack/react-query
+npm install -D @types/bcryptjs
+npx prisma init
+3. Prisma Schema (schema.prisma)
+prismagenerator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        UserRole
+  studentId   String?  @map("student_id")
+  department  String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  taughtCourses     Course[]
+  enrollments       CourseEnrollment[]
+  attendanceRecords AttendanceRecord[]
+  createdForms      FeedbackForm[]
+
+  @@map("users")
+}
+
+model Course {
+  id           String   @id @default(cuid())
+  name         String
+  code         String   @unique
+  teacherId    String   @map("teacher_id")
+  department   String
+  semester     String
+  academicYear String   @map("academic_year")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  teacher           User               @relation(fields: [teacherId], references: [id])
+  enrollments       CourseEnrollment[]
+  attendanceRecords AttendanceRecord[]
+  feedbackForms     FeedbackForm[]
+  feedbackResponses FeedbackResponse[]
+
+  @@map("courses")
+}
+
+model CourseEnrollment {
+  id         String   @id @default(cuid())
+  studentId  String   @map("student_id")
+  courseId   String   @map("course_id")
+  enrolledAt DateTime @default(now()) @map("enrolled_at")
+
+  // Relations
+  student User   @relation(fields: [studentId], references: [id])
+  course  Course @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId])
+  @@map("course_enrollments")
+}
+
+model AttendanceRecord {
+  id                    String  @id @default(cuid())
+  studentId             String  @map("student_id")
+  courseId              String  @map("course_id")
+  totalClasses          Int     @default(0) @map("total_classes")
+  attendedClasses       Int     @default(0) @map("attended_classes")
+  attendancePercentage  Float   @default(0) @map("attendance_percentage")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  student User   @relation(fields: [studentId], references: [id])
+  course  Course @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId])
+  @@map("attendance_records")
+}
+
+model FeedbackForm {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  courseId    String    @map("course_id")
+  teacherId   String    @map("teacher_id")
+  questions   Json
+  isActive    Boolean   @default(true) @map("is_active")
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime  @map("end_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  course    Course             @relation(fields: [courseId], references: [id])
+  teacher   User               @relation(fields: [teacherId], references: [id])
+  responses FeedbackResponse[]
+
+  @@map("feedback_forms")
+}
+
+model FeedbackResponse {
+  id                        String   @id @default(cuid())
+  formId                    String   @map("form_id")
+  courseId                  String   @map("course_id")
+  studentAttendancePercentage Float  @map("student_attendance_percentage")
+  responses                 Json
+  weightFactor              Float    @default(1.0) @map("weight_factor")
+  submittedAt               DateTime @default(now()) @map("submitted_at")
+
+  // Relations
+  form   FeedbackForm @relation(fields: [formId], references: [id])
+  course Course       @relation(fields: [courseId], references: [id])
+
+  @@map("feedback_responses")
+}
+
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+4. TypeScript Types & Interfaces
+typescript// types/index.ts
+export interface FeedbackQuestion {
+  id: string;
+  text: string;
+  type: 'rating' | 'text' | 'select';
+  required: boolean;
+  options?: string[];
+}
+
+export interface FeedbackFormData {
+  title: string;
+  description?: string;
+  courseId: string;
+  questions: FeedbackQuestion[];
+  startDate: Date;
+  endDate: Date;
+}
+
+export interface AttendanceWeight {
+  percentage: number;
+  weight: number;
+  level: 'full' | 'high' | 'moderate' | 'limited' | 'low' | 'minimal';
+}
+
+export interface WeightedFeedbackResult {
+  averageScore: number;
+  totalResponses: number;
+  weightedAverage: number;
+  attendanceDistribution: AttendanceWeight[];
+}
+5. Prisma Client Setup
+typescript// lib/prisma.ts
+import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+6. NextAuth Configuration with Prisma
+typescript// lib/auth.ts
+import { NextAuthOptions } from 'next-auth'
+import CredentialsProvider from 'next-auth/providers/credentials'
+import { PrismaAdapter } from "@auth/prisma-adapter"
+import { prisma } from './prisma'
+import bcrypt from 'bcryptjs'
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    CredentialsProvider({
+      name: 'credentials',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email }
+        })
+
+        if (!user || !await bcrypt.compare(credentials.password, user.password)) {
+          return null
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          department: user.department,
+          studentId: user.studentId
+        }
+      }
+    })
+  ],
+  session: { strategy: 'jwt' },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = user.role
+        token.department = user.department
+        token.studentId = user.studentId
+      }
+      return token
+    },
+    async session({ session, token }) {
+      return {
+        ...session,
+        user: {
+          ...session.user,
+          id: token.sub!,
+          role: token.role as string,
+          department: token.department as string,
+          studentId: token.studentId as string
+        }
+      }
+    }
+  }
+}
+7. Attendance Weight Algorithm
+typescript// lib/attendance-weight.ts
+export function calculateAttendanceWeight(attendancePercentage: number): number {
+  if (attendancePercentage >= 90) return 1.0;
+  if (attendancePercentage >= 75) return 0.9;
+  if (attendancePercentage >= 60) return 0.7;
+  if (attendancePercentage >= 40) return 0.5;
+  if (attendancePercentage >= 25) return 0.3;
+  return 0.1;
+}
+
+export function calculateWeightedFeedback(responses: FeedbackResponse[]): WeightedFeedbackResult {
+  if (!responses.length) return {
+    averageScore: 0,
+    totalResponses: 0,
+    weightedAverage: 0,
+    attendanceDistribution: []
+  };
+
+  let totalWeightedScore = 0;
+  let totalWeight = 0;
+  
+  responses.forEach(response => {
+    const weight = response.weightFactor;
+    const averageScore = calculateAverageScore(response.responses as Record<string, number>);
+    totalWeightedScore += averageScore * weight;
+    totalWeight += weight;
+  });
+
+  return {
+    averageScore: responses.reduce((sum, r) => sum + calculateAverageScore(r.responses as Record<string, number>), 0) / responses.length,
+    totalResponses: responses.length,
+    weightedAverage: totalWeight > 0 ? totalWeightedScore / totalWeight : 0,
+    attendanceDistribution: getAttendanceDistribution(responses)
+  };
+}
+8. API Routes with Type Safety
+typescript// app/api/courses/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { prisma } from '@/lib/prisma'
+import { authOptions } from '@/lib/auth'
+
+export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const courses = await prisma.course.findMany({
+      where: session.user.role === 'TEACHER' 
+        ? { teacherId: session.user.id }
+        : undefined,
+      include: {
+        teacher: {
+          select: { name: true, email: true }
+        },
+        _count: {
+          select: { enrollments: true }
+        }
+      }
+    })
+
+    return NextResponse.json(courses)
+  } catch (error) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+9. shadcn/ui Components Structure
+typescript// components/ui/data-table.tsx - Reusable table component
+// components/feedback-form-builder.tsx - Form builder with drag-drop
+// components/attendance-chart.tsx - Chart showing attendance vs feedback weight
+// components/feedback-submission-form.tsx - Anonymous feedback form
+// components/role-guard.tsx - Route protection component
+10. React Query Setup
+typescript// lib/react-query.ts
+import { QueryClient } from '@tanstack/react-query'
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+      cacheTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+})
+
+// hooks/use-courses.ts
+import { useQuery } from '@tanstack/react-query'
+
+export const useCourses = () => {
+  return useQuery({
+    queryKey: ['courses'],
+    queryFn: () => fetch('/api/courses').then(res => res.json()),
+  })
+}
+11. Form Validation with Zod
+typescript// lib/validations.ts
+import { z } from 'zod'
+
+export const feedbackFormSchema = z.object({
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().optional(),
+  courseId: z.string().min(1, 'Course is required'),
+  startDate: z.date(),
+  endDate: z.date(),
+  questions: z.array(z.object({
+    id: z.string(),
+    text: z.string().min(1, 'Question text is required'),
+    type: z.enum(['rating', 'text', 'select']),
+    required: z.boolean(),
+    options: z.array(z.string()).optional()
+  })).min(1, 'At least one question is required')
+})
+
+export type FeedbackFormInput = z.infer<typeof feedbackFormSchema>
+12. File Structure
+/
+├── app/
+│   ├── api/
+│   │   ├── auth/[...nextauth]/route.ts
+│   │   ├── courses/route.ts
+│   │   ├── feedback-forms/route.ts
+│   │   └── feedback/submit/route.ts
+│   ├── admin/
+│   │   ├── page.tsx
+│   │   ├── users/page.tsx
+│   │   └── reports/page.tsx
+│   ├── teacher/
+│   │   ├── page.tsx
+│   │   ├── forms/page.tsx
+│   │   └── courses/page.tsx
+│   ├── student/
+│   │   ├── page.tsx
+│   │   └── feedback/page.tsx
+│   ├── login/page.tsx
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   ├── ui/ (shadcn components)
+│   ├── layout/
+│   ├── forms/
+│   └── charts/
+├── lib/
+│   ├── prisma.ts
+│   ├── auth.ts
+│   ├── validations.ts
+│   ├── attendance-weight.ts
+│   └── utils.ts
+├── hooks/
+│   ├── use-courses.ts
+│   ├── use-feedback-forms.ts
+│   └── use-attendance.ts
+├── types/
+│   └── index.ts
+├── prisma/
+│   ├── schema.prisma
+│   └── seed.ts
+└── next.config.js
+13. Environment Variables
+envDATABASE_URL="postgresql://username:password@localhost:5432/faculty_feedback"
+NEXTAUTH_URL="http://192.168.1.100:3000"
+NEXTAUTH_SECRET="your-secure-secret-key"
+14. Key shadcn/ui Components to Use
+
+Button, Card, Form, Input, Label, Select, Textarea
+Dialog, Alert, Badge, Table, Tabs
+Chart (for analytics), Calendar (for date picking)
+Toast (for notifications), Progress (for loading states)
+
+Implementation Steps for Copilot:
+
+Project Initialization:
+/terminal npx create-next-app@latest faculty-feedback-system --typescript --tailwind --eslint --app
+
+Database Setup:
+/explain Set up Prisma with PostgreSQL and generate client
+
+Authentication System:
+/fix Create NextAuth configuration with Prisma adapter
+
+Type-Safe API Routes:
+/doc Generate API routes with proper TypeScript types
+
+shadcn/ui Components:
+/optimize Create reusable UI components with shadcn/ui
+
+React Query Integration:
+/test Set up server state management with React Query
+
+
+Specific Copilot Commands:
+
+@workspace /explain - Explain Prisma relationships and schema design
+@workspace /fix - Fix TypeScript errors and type issues
+@workspace /new - Generate new components with proper typing
+@workspace /tests - Create unit tests for utilities and hooks
+
