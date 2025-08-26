@@ -24,9 +24,13 @@ export default function Landing() {
           <CardContent className="p-8">
             <div className="space-y-6">
               <div className="text-center">
-                <p className="text-gray-600 mb-6">
+                <p className="text-gray-600 mb-4">
                   Welcome to the Faculty Feedback System. Please sign in with your institutional account to continue.
                 </p>
+                <div className="bg-blue-50 p-3 rounded-lg text-sm text-gray-700">
+                  <p className="font-semibold mb-1">Getting Started:</p>
+                  <p>First user becomes Admin automatically. Admins can then create Teacher and Student accounts through the User Management panel.</p>
+                </div>
               </div>
 
               <Button 

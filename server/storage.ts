@@ -70,9 +70,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    // Check if this is the first user - make them admin
+    const existingUsers = await db.select().from(users);
+    const isFirstUser = existingUsers.length === 0;
+    
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values({
+        ...userData,
+        role: isFirstUser ? 'ADMIN' : (userData.role || 'STUDENT'),
+      })
       .onConflictDoUpdate({
         target: users.id,
         set: {
