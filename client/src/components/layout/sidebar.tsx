@@ -68,7 +68,8 @@ export function Sidebar({ className }: SidebarProps) {
   const roleColorClass = roleColors[user.role as keyof typeof roleColors];
 
   const handleLogout = () => {
-    window.location.href = '/api/logout';
+    localStorage.removeItem('user');
+    window.location.href = '/login';
   };
 
   return (

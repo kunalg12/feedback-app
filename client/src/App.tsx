@@ -14,6 +14,8 @@ import FeedbackSubmissionPage from "@/pages/feedback-submission";
 import AnalyticsReports from "@/pages/analytics-reports";
 import UserManagement from "@/pages/user-management";
 import RoleSelection from "@/pages/role-selection";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -30,12 +32,14 @@ function Router() {
     );
   }
 
-  // If not authenticated, show landing page
+  // If not authenticated, show login/register pages
   if (!isAuthenticated) {
     return (
       <Switch>
-        <Route path="/" component={Landing} />
-        <Route component={Landing} />
+        <Route path="/login" component={Login} />
+        <Route path="/register" component={Register} />
+        <Route path="/" component={Login} />
+        <Route component={Login} />
       </Switch>
     );
   }
