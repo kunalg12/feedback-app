@@ -26,11 +26,11 @@ export default function AnalyticsReports() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const { data: courses = [] } = useCourses();
-  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [selectedCourse, setSelectedCourse] = useState<string>("all");
   const [selectedPeriod, setSelectedPeriod] = useState<string>("Fall 2024");
   const [dateRange, setDateRange] = useState<string>("");
   
-  const { data: feedbackResponses = [], isLoading: responsesLoading } = useCourseFeedbackResponses(selectedCourse);
+  const { data: feedbackResponses = [], isLoading: responsesLoading } = useCourseFeedbackResponses(selectedCourse === "all" ? "" : selectedCourse);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -69,7 +69,7 @@ export default function AnalyticsReports() {
 
   // Calculate analytics data
   const analytics = calculateWeightedFeedback(feedbackResponses);
-  const responseRate = selectedCourse ? 
+  const responseRate = selectedCourse !== "all" ? 
     ((feedbackResponses.length / 50) * 100).toFixed(0) : // Assume 50 students per course
     "0";
 
@@ -163,7 +163,7 @@ export default function AnalyticsReports() {
                     <SelectValue placeholder="Select a course" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Courses</SelectItem>
+                    <SelectItem value="all">All Courses</SelectItem>
                     {courses.map((course) => (
                       <SelectItem key={course.id} value={course.id}>
                         {course.code} - {course.name}
