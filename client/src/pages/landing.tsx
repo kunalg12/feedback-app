@@ -4,7 +4,7 @@ import { GraduationCap } from "lucide-react";
 
 export default function Landing() {
   const handleLogin = () => {
-    window.location.href = '/api/login';
+    window.location.href = '/login';
   };
 
   return (
@@ -46,7 +46,7 @@ export default function Landing() {
                 className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium"
                 data-testid="button-sign-in"
               >
-                Sign in with Replit
+                Sign in
               </Button>
             </div>
           </CardContent>

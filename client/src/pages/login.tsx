@@ -9,6 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { GraduationCap, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -32,48 +33,24 @@ export default function Login() {
 
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
-    
-    // Demo login logic - check against demo accounts
-    const demoAccounts = {
-      'admin@college.edu': { role: 'ADMIN', name: 'Admin User', password: 'admin123' },
-      'teacher@college.edu': { role: 'TEACHER', name: 'John Professor', password: 'teacher123' },
-      'student@college.edu': { role: 'STUDENT', name: 'Jane Student', password: 'student123' }
-    };
-
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const res = await apiRequest('POST', '/api/auth/login', data);
+      const { token } = await res.json();
+      localStorage.setItem('token', token);
 
-      const account = demoAccounts[data.email as keyof typeof demoAccounts];
-      
-      if (account && data.password === account.password) {
-        // Store user data in localStorage (demo purposes)
-        localStorage.setItem('user', JSON.stringify({
-          email: data.email,
-          role: account.role,
-          firstName: account.name.split(' ')[0],
-          lastName: account.name.split(' ')[1] || '',
-          id: `demo-${account.role.toLowerCase()}`,
-        }));
+      const userRes = await apiRequest('GET', '/api/auth/user');
+      const user = await userRes.json();
+      localStorage.setItem('user', JSON.stringify(user));
 
-        toast({
-          title: "Login Successful",
-          description: `Welcome back, ${account.name}!`,
-        });
-
-        // Redirect based on role
-        window.location.href = '/';
-      } else {
-        toast({
-          title: "Login Failed",
-          description: "Invalid email or password. Check demo credentials below.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
       toast({
-        title: "Error",
-        description: "An error occurred during login",
+        title: "Login Successful",
+        description: `Welcome back, ${user.firstName || user.email}!`,
+      });
+      window.location.href = '/';
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error?.message || "Invalid credentials",
         variant: "destructive",
       });
     } finally {
@@ -92,7 +69,7 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8">
         {/* Header */}
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-primary-600 rounded-xl flex items-center justify-center mb-4">
+          <div className="mx-auto h-16 w-16 bg-blue-600 rounded-xl flex items-center justify-center mb-4">
             <GraduationCap className="text-white text-2xl h-8 w-8" />
           </div>
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Faculty Feedback System</h2>
@@ -172,53 +149,7 @@ export default function Login() {
               </form>
             </Form>
 
-            {/* Demo Account Options */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <p className="text-sm text-gray-600 mb-3 font-medium">Demo Accounts (Click to login):</p>
-              <div className="space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-between text-left"
-                  onClick={() => handleDemoLogin('admin@college.edu', 'admin123')}
-                  data-testid="button-demo-admin"
-                >
-                  <span className="flex items-center">
-                    <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                    Admin Account
-                  </span>
-                  <span className="text-xs text-gray-500">admin@college.edu</span>
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-between text-left"
-                  onClick={() => handleDemoLogin('teacher@college.edu', 'teacher123')}
-                  data-testid="button-demo-teacher"
-                >
-                  <span className="flex items-center">
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2"></span>
-                    Teacher Account
-                  </span>
-                  <span className="text-xs text-gray-500">teacher@college.edu</span>
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-between text-left"
-                  onClick={() => handleDemoLogin('student@college.edu', 'student123')}
-                  data-testid="button-demo-student"
-                >
-                  <span className="flex items-center">
-                    <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                    Student Account
-                  </span>
-                  <span className="text-xs text-gray-500">student@college.edu</span>
-                </Button>
-              </div>
-            </div>
+            {/* Demo account buttons removed to use real backend auth */}
 
             {/* Register Link */}
             <div className="mt-6 pt-4 border-t border-gray-200 text-center">

@@ -19,11 +19,14 @@ import {
   type InsertFeedbackResponse,
 } from "@shared/schema";
 import { db } from "./db";
+import { nanoid } from "nanoid";
 import { eq, and, desc, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 export interface IStorage {
-  // User operations (mandatory for Replit Auth)
+  // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   createUser(user: any): Promise<User>;
@@ -69,25 +72,34 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+    return user;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
     // Check if this is the first user - make them admin
     const existingUsers = await db.select().from(users);
     const isFirstUser = existingUsers.length === 0;
     
-    const [user] = await db
+    const id = userData.id ?? nanoid();
+    await db
       .insert(users)
       .values({
         ...userData,
+        id,
         role: isFirstUser ? 'ADMIN' : (userData.role || 'STUDENT'),
       })
-      .onConflictDoUpdate({
-        target: users.id,
+      .onDuplicateKeyUpdate({
         set: {
           ...userData,
           updatedAt: new Date(),
         },
-      })
-      .returning();
+      });
+    const [user] = await db.select().from(users).where(eq(users.id, id));
       
     // Create some demo accounts if this is the first user (admin)
     if (isFirstUser) {
@@ -99,34 +111,65 @@ export class DatabaseStorage implements IStorage {
 
   async createDemoAccounts(): Promise<void> {
     try {
-      // Create demo teacher account
+      // Check for existing demo accounts
+      const existingUsers = await db.select().from(users).where(
+        sql`email IN ('admin@college.edu', 'teacher@college.edu', 'student@college.edu')`
+      );
+      
+      const existingEmails = existingUsers.map(u => u.email);
+      
+      // Create admin account if it doesn't exist
+      if (!existingEmails.includes('admin@college.edu')) {
+        const adminHashed = await bcrypt.hash('admin123', 10);
+        await db.insert(users).values({
+          id: 'demo-admin-1',
+          email: 'admin@college.edu',
+          firstName: 'Admin',
+          lastName: 'User',
+          role: 'ADMIN',
+          password: adminHashed,
+          department: 'Administration',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Create teacher account if it doesn't exist
+      if (!existingEmails.includes('teacher@college.edu')) {
+        const teacherHashed = await bcrypt.hash('teacher123', 10);
       await db.insert(users).values({
         id: 'demo-teacher-1',
         email: 'teacher@college.edu',
         firstName: 'John',
         lastName: 'Professor',
         role: 'TEACHER',
+          password: teacherHashed,
         department: 'Computer Science',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+      }
 
-      // Create demo student account
+      // Create student account if it doesn't exist
+      if (!existingEmails.includes('student@college.edu')) {
+        const studentHashed = await bcrypt.hash('student123', 10);
       await db.insert(users).values({
         id: 'demo-student-1', 
         email: 'student@college.edu',
         firstName: 'Jane',
         lastName: 'Student',
         role: 'STUDENT',
+          password: studentHashed,
         studentId: 'CS2024001',
         department: 'Computer Science',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+      }
 
       console.log('Demo accounts created successfully');
     } catch (error) {
-      console.log('Demo accounts already exist or creation failed:', error);
+      console.log('Demo accounts creation failed:', error);
     }
   }
 
@@ -135,23 +178,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(userData: any): Promise<User> {
-    const [user] = await db
+    const id = nanoid();
+    await db
       .insert(users)
       .values({
         ...userData,
-        id: sql`gen_random_uuid()`,
-      })
-      .returning();
-    return user;
+        id,
+      });
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user!;
   }
 
   async updateUser(id: string, userData: any): Promise<User> {
-    const [user] = await db
+    await db
       .update(users)
       .set({ ...userData, updatedAt: new Date() })
-      .where(eq(users.id, id))
-      .returning();
-    return user;
+      .where(eq(users.id, id));
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user!;
   }
 
   async deleteUser(id: string): Promise<void> {
@@ -193,20 +237,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCourse(course: InsertCourse): Promise<Course> {
-    const [newCourse] = await db
+    const id = nanoid();
+    await db
       .insert(courses)
-      .values(course)
-      .returning();
-    return newCourse;
+      .values({ ...course, id });
+    const [row] = await db.select().from(courses).where(eq(courses.id, id));
+    return row!;
   }
 
   async updateCourse(id: string, course: Partial<InsertCourse>): Promise<Course> {
-    const [updatedCourse] = await db
+    await db
       .update(courses)
       .set(course)
-      .where(eq(courses.id, id))
-      .returning();
-    return updatedCourse;
+      .where(eq(courses.id, id));
+    const [row] = await db.select().from(courses).where(eq(courses.id, id));
+    return row!;
   }
 
   async deleteCourse(id: string): Promise<void> {
@@ -215,11 +260,15 @@ export class DatabaseStorage implements IStorage {
 
   // Enrollment operations
   async enrollStudent(enrollment: InsertCourseEnrollment): Promise<CourseEnrollment> {
-    const [newEnrollment] = await db
+    const id = nanoid();
+    await db
       .insert(courseEnrollments)
-      .values(enrollment)
-      .returning();
-    return newEnrollment;
+      .values({ ...enrollment, id })
+      .onDuplicateKeyUpdate({
+        set: { ...enrollment },
+      });
+    const [row] = await db.select().from(courseEnrollments).where(eq(courseEnrollments.id, id));
+    return row!;
   }
 
   async getEnrollmentsByCourse(courseId: string): Promise<CourseEnrollment[]> {
@@ -238,18 +287,24 @@ export class DatabaseStorage implements IStorage {
 
   // Attendance operations
   async updateAttendance(attendance: InsertAttendanceRecord): Promise<AttendanceRecord> {
-    const [updatedAttendance] = await db
+    const id = nanoid();
+    await db
       .insert(attendanceRecords)
-      .values(attendance)
-      .onConflictDoUpdate({
-        target: [attendanceRecords.studentId, attendanceRecords.courseId],
+      .values({ ...attendance, id })
+      .onDuplicateKeyUpdate({
         set: {
           ...attendance,
           updatedAt: new Date(),
         },
-      })
-      .returning();
-    return updatedAttendance;
+      });
+    const [row] = await db
+      .select()
+      .from(attendanceRecords)
+      .where(and(
+        eq(attendanceRecords.studentId, attendance.studentId!),
+        eq(attendanceRecords.courseId, attendance.courseId!)
+      ));
+    return row!;
   }
 
   async getAttendance(studentId: string, courseId: string): Promise<AttendanceRecord | undefined> {
@@ -274,11 +329,12 @@ export class DatabaseStorage implements IStorage {
 
   // Feedback form operations
   async createFeedbackForm(form: InsertFeedbackForm): Promise<FeedbackForm> {
-    const [newForm] = await db
+    const id = nanoid();
+    await db
       .insert(feedbackForms)
-      .values(form)
-      .returning();
-    return newForm;
+      .values({ ...form, id });
+    const [row] = await db.select().from(feedbackForms).where(eq(feedbackForms.id, id));
+    return row!;
   }
 
   async getFeedbackForms(): Promise<FeedbackForm[]> {
@@ -305,12 +361,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateFeedbackForm(id: string, form: Partial<InsertFeedbackForm>): Promise<FeedbackForm> {
-    const [updatedForm] = await db
+    await db
       .update(feedbackForms)
       .set({ ...form, updatedAt: new Date() })
-      .where(eq(feedbackForms.id, id))
-      .returning();
-    return updatedForm;
+      .where(eq(feedbackForms.id, id));
+    const [row] = await db.select().from(feedbackForms).where(eq(feedbackForms.id, id));
+    return row!;
   }
 
   async deleteFeedbackForm(id: string): Promise<void> {
@@ -319,11 +375,12 @@ export class DatabaseStorage implements IStorage {
 
   // Feedback response operations
   async submitFeedbackResponse(response: InsertFeedbackResponse): Promise<FeedbackResponse> {
-    const [newResponse] = await db
+    const id = nanoid();
+    await db
       .insert(feedbackResponses)
-      .values(response)
-      .returning();
-    return newResponse;
+      .values({ ...response, id });
+    const [row] = await db.select().from(feedbackResponses).where(eq(feedbackResponses.id, id));
+    return row!;
   }
 
   async getFeedbackResponsesByForm(formId: string): Promise<FeedbackResponse[]> {

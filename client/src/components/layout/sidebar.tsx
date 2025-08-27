@@ -50,7 +50,7 @@ const roleIcons = {
 };
 
 const roleColors = {
-  ADMIN: 'bg-primary-600',
+  ADMIN: 'bg-blue-600',
   TEACHER: 'bg-emerald-600',
   STUDENT: 'bg-purple-600',
 };
@@ -69,6 +69,7 @@ export function Sidebar({ className }: SidebarProps) {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
     window.location.href = '/login';
   };
 

@@ -1,5 +1,7 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { storage } from "./storage";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -37,6 +39,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Ensure demo accounts exist on startup
+  try {
+    await storage.createDemoAccounts();
+    log("Demo accounts initialized");
+  } catch (error) {
+    log("Demo accounts already exist or initialization failed");
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -61,11 +71,8 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  server.listen(port, () => {
     log(`serving on port ${port}`);
+    log(`🌐 Open: http://localhost:${port}`);
   });
 })();

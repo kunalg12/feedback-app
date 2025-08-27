@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { GraduationCap, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 const registerSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -52,23 +53,25 @@ export default function Register() {
     setIsLoading(true);
     
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const payload = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        password: data.password,
+      };
 
-      // In a real app, this would make an API call
-      // For demo purposes, we'll just show success and redirect to login
-      
+      await apiRequest('POST', '/api/auth/register', payload);
+
       toast({
         title: "Registration Successful",
         description: "Your account has been created. Please sign in to continue.",
       });
 
-      // Redirect to login page
       window.location.href = '/login';
     } catch (error) {
       toast({
         title: "Registration Failed",
-        description: "An error occurred while creating your account",
+        description: (error as any)?.message || "An error occurred while creating your account",
         variant: "destructive",
       });
     } finally {

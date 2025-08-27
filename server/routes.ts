@@ -1,7 +1,9 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
+import "dotenv/config";
+import type { Express, Request, Response, NextFunction } from "express";
+import { createServer } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import {
   insertCourseSchema,
   insertCourseEnrollmentSchema,
@@ -12,28 +14,82 @@ import {
 } from "@shared/schema";
 import { calculateAttendanceWeight } from "../client/src/lib/attendance-weight";
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+const JWT_SECRET =
+  process.env.JWT_SECRET ?? (process.env.NODE_ENV !== 'production' ? 'dev-secret-change-me' : undefined);
+
+if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'production') {
+  console.warn('[auth] JWT_SECRET not set. Using insecure dev fallback. Set JWT_SECRET in .env.');
+}
+
+export async function registerRoutes(app: Express) {
+  // JWT Auth Middleware
+  function authenticateJWT(req: Request, res: Response, next: NextFunction) {
+    if (!JWT_SECRET) {
+      return res.status(500).json({ message: "Server misconfigured: JWT_SECRET not set" });
+    }
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      jwt.verify(token, JWT_SECRET as string, (err: any, decoded: any) => {
+        if (err) return res.status(401).json({ message: "Unauthorized" });
+        (req as any).user = decoded;
+        next();
+      });
+    } else {
+      res.status(401).json({ message: "Unauthorized" });
+    }
+  }
+
+  // Register endpoint
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      const existing = await (storage as any).getUserByEmail?.(email);
+      if (existing) return res.status(409).json({ message: "User already exists" });
+      const hashed = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({ email, password: hashed, firstName, lastName, role: "STUDENT" });
+      res.status(201).json({ id: user.id, email: user.email });
+    } catch (e) {
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  // Login endpoint
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
+    try {
+      if (!JWT_SECRET) {
+        return res.status(500).json({ message: "Server misconfigured: JWT_SECRET not set" });
+      }
+      const { email, password } = req.body;
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) return res.status(401).json({ message: "Invalid credentials" });
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) return res.status(401).json({ message: "Invalid credentials" });
+      const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET as string, { expiresIn: "7d" });
+      res.json({ token });
+    } catch (e) {
+      console.error("Login error:", e);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.get('/api/auth/user', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
       res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
+    } catch (_error) {
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
   // User management routes (Admin only)
-  app.get('/api/users', isAuthenticated, async (req: any, res) => {
+  app.get('/api/users', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'ADMIN') {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -46,11 +102,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/users', isAuthenticated, async (req: any, res) => {
+  app.post('/api/users', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'ADMIN') {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -64,16 +120,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/users/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/users/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'ADMIN') {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const validatedData = insertUserSchema.partial().parse(req.body);
       const updatedUser = await storage.updateUser(id, validatedData);
       res.json(updatedUser);
@@ -83,16 +139,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/users/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/users/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'ADMIN') {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       await storage.deleteUser(id);
       res.json({ message: "User deleted successfully" });
     } catch (error) {
@@ -102,36 +158,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Course routes
-  app.get('/api/courses', isAuthenticated, async (req: any, res) => {
+  app.get('/api/courses', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      let courses;
+      let result;
       if (user.role === 'ADMIN') {
-        courses = await storage.getCourses();
+        result = await storage.getCourses();
       } else if (user.role === 'TEACHER') {
-        courses = await storage.getCoursesByTeacher(userId);
+        result = await storage.getCoursesByTeacher(userId);
       } else {
-        courses = await storage.getCoursesByStudent(userId);
+        result = await storage.getCoursesByStudent(userId);
       }
 
-      res.json(courses);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching courses:", error);
       res.status(500).json({ message: "Failed to fetch courses" });
     }
   });
 
-  app.post('/api/courses', isAuthenticated, async (req: any, res) => {
+  app.post('/api/courses', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -150,11 +206,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enrollment routes
-  app.post('/api/enrollments', isAuthenticated, async (req: any, res) => {
+  app.post('/api/enrollments', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'ADMIN') {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -169,9 +225,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/courses/:courseId/enrollments', isAuthenticated, async (req: any, res) => {
+  app.get('/api/courses/:courseId/enrollments', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const { courseId } = req.params;
+      const { courseId } = req.params as { courseId: string };
       const enrollments = await storage.getEnrollmentsByCourse(courseId);
       res.json(enrollments);
     } catch (error) {
@@ -181,18 +237,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Attendance routes
-  app.put('/api/attendance', isAuthenticated, async (req: any, res) => {
+  app.put('/api/attendance', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       const validatedData = insertAttendanceRecordSchema.parse(req.body);
-      const attendancePercentage = (validatedData.totalClasses || 0) > 0 
-        ? ((validatedData.attendedClasses || 0) / (validatedData.totalClasses || 0)) * 100 
+      const attendancePercentage = (validatedData.totalClasses || 0) > 0
+        ? ((validatedData.attendedClasses || 0) / (validatedData.totalClasses || 0)) * 100
         : 0;
 
       const attendance = await storage.updateAttendance({
@@ -207,9 +263,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/students/:studentId/attendance', isAuthenticated, async (req: any, res) => {
+  app.get('/api/students/:studentId/attendance', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const { studentId } = req.params;
+      const { studentId } = req.params as { studentId: string };
       const attendance = await storage.getAttendanceByStudent(studentId);
       res.json(attendance);
     } catch (error) {
@@ -219,25 +275,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Feedback form routes
-  app.get('/api/feedback-forms', isAuthenticated, async (req: any, res) => {
+  app.get('/api/feedback-forms', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      let forms;
+      let forms: any[] = [];
       if (user.role === 'ADMIN') {
         forms = await storage.getFeedbackForms();
       } else if (user.role === 'TEACHER') {
         forms = await storage.getFeedbackFormsByTeacher(userId);
       } else {
-        // For students, get forms from their enrolled courses
         const enrollments = await storage.getEnrollmentsByStudent(userId);
         const courseIds = enrollments.map(e => e.courseId);
-        forms = [];
         for (const courseId of courseIds) {
           const courseForms = await storage.getFeedbackFormsByCourse(courseId);
           forms.push(...courseForms);
@@ -251,11 +305,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/feedback-forms', isAuthenticated, async (req: any, res) => {
+  app.post('/api/feedback-forms', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -274,18 +328,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Feedback response routes
-  app.post('/api/feedback-responses', isAuthenticated, async (req: any, res) => {
+  app.post('/api/feedback-responses', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || user.role !== 'STUDENT') {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       const validatedData = insertFeedbackResponseSchema.parse(req.body);
-      
-      // Get student's attendance for the course
+
       const attendance = await storage.getAttendance(userId, validatedData.courseId);
       const attendancePercentage = attendance?.attendancePercentage || 0;
       const weightFactor = calculateAttendanceWeight(attendancePercentage);
@@ -303,16 +356,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/feedback-forms/:formId/responses', isAuthenticated, async (req: any, res) => {
+  app.get('/api/feedback-forms/:formId/responses', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { formId } = req.params;
+      const { formId } = req.params as { formId: string };
       const responses = await storage.getFeedbackResponsesByForm(formId);
       res.json(responses);
     } catch (error) {
@@ -321,16 +374,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/courses/:courseId/feedback-responses', isAuthenticated, async (req: any, res) => {
+  app.get('/api/courses/:courseId/feedback-responses', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { courseId } = req.params;
+      const { courseId } = req.params as { courseId: string };
       const responses = await storage.getFeedbackResponsesByCourse(courseId);
       res.json(responses);
     } catch (error) {
@@ -340,16 +393,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Additional CRUD routes for courses
-  app.put('/api/courses/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/courses/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const validatedData = insertCourseSchema.partial().parse(req.body);
       const updatedCourse = await storage.updateCourse(id, validatedData);
       res.json(updatedCourse);
@@ -359,16 +412,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/courses/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/courses/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       await storage.deleteCourse(id);
       res.json({ message: "Course deleted successfully" });
     } catch (error) {
@@ -378,16 +431,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Additional CRUD routes for feedback forms
-  app.put('/api/feedback-forms/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/feedback-forms/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const validatedData = insertFeedbackFormSchema.partial().parse(req.body);
       const updatedForm = await storage.updateFeedbackForm(id, validatedData);
       res.json(updatedForm);
@@ -397,16 +450,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/feedback-forms/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/feedback-forms/:id', authenticateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
-      
+
       if (!user || (user.role !== 'ADMIN' && user.role !== 'TEACHER')) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       await storage.deleteFeedbackForm(id);
       res.json({ message: "Feedback form deleted successfully" });
     } catch (error) {

@@ -1,92 +1,83 @@
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
 import {
-  index,
-  jsonb,
-  pgTable,
+  mysqlTable as table,
   timestamp,
   varchar,
   text,
   boolean,
-  integer,
-  real,
-  pgEnum,
-  unique,
-} from "drizzle-orm/pg-core";
+  int,
+  double,
+  mysqlEnum,
+  uniqueIndex,
+  json,
+} from "drizzle-orm/mysql-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Session storage table for Replit Auth
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
-);
+// Removed sessions table (was used for Replit Auth sessions)
 
 // User role enum
-export const userRoleEnum = pgEnum('user_role', ['ADMIN', 'TEACHER', 'STUDENT']);
+// Note: MySQL enum is usually defined inline per column
 
 // Users table for Replit Auth
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
-  role: userRoleEnum("role").notNull().default('STUDENT'),
-  studentId: varchar("student_id"),
-  department: varchar("department"),
+export const users = table("users", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  email: varchar("email", { length: 191 }).unique(),
+  password: varchar("password", { length: 255 }),
+  firstName: varchar("first_name", { length: 191 }),
+  lastName: varchar("last_name", { length: 191 }),
+  profileImageUrl: varchar("profile_image_url", { length: 255 }),
+  role: mysqlEnum("role", ['ADMIN', 'TEACHER', 'STUDENT']).notNull().default('STUDENT'),
+  studentId: varchar("student_id", { length: 191 }),
+  department: varchar("department", { length: 191 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Courses table
-export const courses = pgTable("courses", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: varchar("name").notNull(),
-  code: varchar("code").notNull().unique(),
-  teacherId: varchar("teacher_id").notNull().references(() => users.id),
-  department: varchar("department").notNull(),
-  semester: varchar("semester").notNull(),
-  academicYear: varchar("academic_year").notNull(),
+export const courses = table("courses", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 191 }).notNull().unique(),
+  teacherId: varchar("teacher_id", { length: 191 }).notNull().references(() => users.id),
+  department: varchar("department", { length: 191 }).notNull(),
+  semester: varchar("semester", { length: 191 }).notNull(),
+  academicYear: varchar("academic_year", { length: 191 }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Course enrollments table
-export const courseEnrollments = pgTable("course_enrollments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  studentId: varchar("student_id").notNull().references(() => users.id),
-  courseId: varchar("course_id").notNull().references(() => courses.id),
+export const courseEnrollments = table("course_enrollments", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  studentId: varchar("student_id", { length: 191 }).notNull().references(() => users.id),
+  courseId: varchar("course_id", { length: 191 }).notNull().references(() => courses.id),
   enrolledAt: timestamp("enrolled_at").defaultNow(),
-}, (table) => [
-  unique().on(table.studentId, table.courseId),
+}, (t) => [
+  uniqueIndex('enrollment_unique').on(t.studentId, t.courseId),
 ]);
 
 // Attendance records table
-export const attendanceRecords = pgTable("attendance_records", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  studentId: varchar("student_id").notNull().references(() => users.id),
-  courseId: varchar("course_id").notNull().references(() => courses.id),
-  totalClasses: integer("total_classes").notNull().default(0),
-  attendedClasses: integer("attended_classes").notNull().default(0),
-  attendancePercentage: real("attendance_percentage").notNull().default(0),
+export const attendanceRecords = table("attendance_records", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  studentId: varchar("student_id", { length: 191 }).notNull().references(() => users.id),
+  courseId: varchar("course_id", { length: 191 }).notNull().references(() => courses.id),
+  totalClasses: int("total_classes").notNull().default(0),
+  attendedClasses: int("attended_classes").notNull().default(0),
+  attendancePercentage: double("attendance_percentage").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  unique().on(table.studentId, table.courseId),
+}, (t) => [
+  uniqueIndex('attendance_unique').on(t.studentId, t.courseId),
 ]);
 
 // Feedback forms table
-export const feedbackForms = pgTable("feedback_forms", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  title: varchar("title").notNull(),
+export const feedbackForms = table("feedback_forms", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  courseId: varchar("course_id").notNull().references(() => courses.id),
-  teacherId: varchar("teacher_id").notNull().references(() => users.id),
-  questions: jsonb("questions").notNull(),
+  courseId: varchar("course_id", { length: 191 }).notNull().references(() => courses.id),
+  teacherId: varchar("teacher_id", { length: 191 }).notNull().references(() => users.id),
+  questions: json("questions").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
@@ -95,13 +86,13 @@ export const feedbackForms = pgTable("feedback_forms", {
 });
 
 // Feedback responses table
-export const feedbackResponses = pgTable("feedback_responses", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  formId: varchar("form_id").notNull().references(() => feedbackForms.id),
-  courseId: varchar("course_id").notNull().references(() => courses.id),
-  studentAttendancePercentage: real("student_attendance_percentage").notNull(),
-  responses: jsonb("responses").notNull(),
-  weightFactor: real("weight_factor").notNull().default(1.0),
+export const feedbackResponses = table("feedback_responses", {
+  id: varchar("id", { length: 191 }).primaryKey(),
+  formId: varchar("form_id", { length: 191 }).notNull().references(() => feedbackForms.id),
+  courseId: varchar("course_id", { length: 191 }).notNull().references(() => courses.id),
+  studentAttendancePercentage: double("student_attendance_percentage").notNull(),
+  responses: json("responses").notNull(),
+  weightFactor: double("weight_factor").notNull().default(1.0),
   submittedAt: timestamp("submitted_at").defaultNow(),
 });
 
