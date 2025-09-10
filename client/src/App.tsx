@@ -16,6 +16,7 @@ import UserManagement from "@/pages/user-management";
 import RoleSelection from "@/pages/role-selection";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import TeacherFeedbackFormsPage from "@/pages/teacher-feedback-forms";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -73,6 +74,7 @@ function Router() {
         <>
           <Route path="/" component={TeacherDashboard} />
           <Route path="/teacher" component={TeacherDashboard} />
+          <Route path="/teacher/feedback-forms" component={TeacherFeedbackFormsPage} />
           <Route path="/teacher/feedback-forms/new" component={FeedbackFormBuilderPage} />
           <Route path="/teacher/analytics" component={AnalyticsReports} />
         </>

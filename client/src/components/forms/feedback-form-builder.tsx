@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Trash2, Eye } from "lucide-react";
-import { useCourses } from "@/hooks/use-courses";
+import { useCourses, useCreateCourse } from "@/hooks/use-courses";
 import { useCreateFeedbackForm } from "@/hooks/use-feedback-forms";
 import { feedbackFormSchema, type FeedbackFormInput } from "@/lib/validations";
 import { useToast } from "@/hooks/use-toast";
@@ -22,32 +22,60 @@ interface FeedbackFormBuilderProps {
 
 export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilderProps) {
   const { toast } = useToast();
-  const { data: courses = [] } = useCourses();
+  const { data: courses = [], isLoading: coursesLoading, error: coursesError } = useCourses();
   const createForm = useCreateFeedbackForm();
+  const createCourse = useCreateCourse();
   
-  const form = useForm<FeedbackFormInput>({
-    resolver: zodResolver(feedbackFormSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      courseId: "",
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default to 1 week from now
-      questions: [
-        {
-          id: "1",
-          text: "How would you rate the overall quality of this course?",
-          type: "rating",
-          required: true,
-        }
-      ],
-    },
-  });
+  let form;
+  try {
+    form = useForm<FeedbackFormInput>({
+      resolver: zodResolver(feedbackFormSchema),
+      defaultValues: {
+        title: "",
+        description: "",
+        courseId: "",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default to 1 week from now
+        questions: [
+          {
+            id: "1",
+            text: "How would you rate the overall quality of this course?",
+            type: "rating",
+            required: true,
+          }
+        ],
+      },
+    });
+  } catch (error) {
+    console.error('FeedbackFormBuilder - Form initialization error:', error);
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600">Error initializing form: {error instanceof Error ? error.message : 'Unknown error'}</p>
+        </div>
+      </div>
+    );
+  }
 
-  const { fields, append, remove } = useFieldArray({
-    control: form.control,
-    name: "questions",
-  });
+  let fields, append, remove;
+  try {
+    const fieldArrayResult = useFieldArray({
+      control: form.control,
+      name: "questions",
+    });
+    fields = fieldArrayResult.fields;
+    append = fieldArrayResult.append;
+    remove = fieldArrayResult.remove;
+  } catch (error) {
+    console.error('FeedbackFormBuilder - Field array initialization error:', error);
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600">Error initializing field array: {error instanceof Error ? error.message : 'Unknown error'}</p>
+        </div>
+      </div>
+    );
+  }
 
   const addQuestion = () => {
     const newQuestion: FeedbackQuestion = {
@@ -59,8 +87,42 @@ export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilder
     append(newQuestion);
   };
 
+  const createDemoCourse = async () => {
+    try {
+      await createCourse.mutateAsync({
+        name: 'Sample Course',
+        code: 'SAMPLE101',
+        department: 'General',
+        semester: 'Fall 2024',
+        academicYear: '2024-2025',
+      });
+      
+      toast({
+        title: "Success",
+        description: "Demo course created successfully",
+      });
+    } catch (error) {
+      console.error('Error creating demo course:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create demo course",
+        variant: "destructive",
+      });
+    }
+  };
+
   const onSubmit = async (data: FeedbackFormInput) => {
     try {
+      // Check if a course is selected
+      if (!data.courseId) {
+        toast({
+          title: "Error",
+          description: "Please select a course before creating the feedback form",
+          variant: "destructive",
+        });
+        return;
+      }
+
       await createForm.mutateAsync({
         ...data,
         teacherId: "", // Will be set by backend based on authenticated user
@@ -74,6 +136,7 @@ export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilder
       
       onSuccess?.();
     } catch (error) {
+      console.error('Error creating feedback form:', error);
       toast({
         title: "Error",
         description: "Failed to create feedback form",
@@ -152,7 +215,7 @@ export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilder
                     )}
                   />
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <FormField
                       control={form.control}
                       name="courseId"
@@ -162,17 +225,74 @@ export function FeedbackFormBuilder({ onSuccess, onCancel }: FeedbackFormBuilder
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger data-testid="select-course">
-                                <SelectValue placeholder="Select a course" />
+                                <SelectValue placeholder={
+                                  coursesLoading 
+                                    ? "Loading courses..." 
+                                    : coursesError 
+                                      ? "Error loading courses" 
+                                      : courses.length === 0 
+                                        ? "No courses available" 
+                                        : "Select a course"
+                                } />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {courses.map((course) => (
-                                <SelectItem key={course.id} value={course.id}>
-                                  {course.code} - {course.name}
+                              {coursesLoading ? (
+                                <SelectItem value="" disabled>
+                                  Loading courses...
                                 </SelectItem>
-                              ))}
+                              ) : coursesError ? (
+                                <SelectItem value="" disabled>
+                                  Error loading courses
+                                </SelectItem>
+                              ) : courses.length === 0 ? (
+                                <>
+                                  <SelectItem value="" disabled>
+                                    No courses available
+                                  </SelectItem>
+                                  <SelectSeparator />
+                                  <div className="p-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={createDemoCourse}
+                                      disabled={createCourse.isPending}
+                                      className="w-full"
+                                    >
+                                      {createCourse.isPending ? "Creating..." : "Create Demo Course"}
+                                    </Button>
+                                  </div>
+                                </>
+                              ) : (
+                                courses.map((course) => (
+                                  <SelectItem key={course.id} value={course.id}>
+                                    {course.code} - {course.name}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="startDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Start Date</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="date"
+                              {...field}
+                              value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : ''}
+                              onChange={(e) => field.onChange(new Date(e.target.value))}
+                              data-testid="input-start-date"
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}

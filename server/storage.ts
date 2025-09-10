@@ -110,66 +110,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDemoAccounts(): Promise<void> {
+    // Demo accounts already exist in database, no need to create them
+    console.log('Demo accounts already exist in database');
+    
+    // Ensure demo student is enrolled in demo courses
     try {
-      // Check for existing demo accounts
-      const existingUsers = await db.select().from(users).where(
-        sql`email IN ('admin@college.edu', 'teacher@college.edu', 'student@college.edu')`
-      );
+      const student = await this.getUserByEmail('student@college.edu');
+      const teacher = await this.getUserByEmail('teacher@college.edu');
       
-      const existingEmails = existingUsers.map(u => u.email);
-      
-      // Create admin account if it doesn't exist
-      if (!existingEmails.includes('admin@college.edu')) {
-        const adminHashed = await bcrypt.hash('admin123', 10);
-        await db.insert(users).values({
-          id: 'demo-admin-1',
-          email: 'admin@college.edu',
-          firstName: 'Admin',
-          lastName: 'User',
-          role: 'ADMIN',
-          password: adminHashed,
-          department: 'Administration',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+      if (student && teacher) {
+        // Get demo courses
+        const demoCourses = await db.select().from(courses).where(
+          sql`code IN ('CS101', 'CS201')`
+        );
+        
+        // Check existing enrollments
+        const existingEnrollments = await db.select().from(courseEnrollments).where(
+          eq(courseEnrollments.studentId, student.id)
+        );
+        
+        const enrolledCourseIds = existingEnrollments.map(e => e.courseId);
+        
+        // Enroll student in demo courses if not already enrolled
+        for (const course of demoCourses) {
+          if (!enrolledCourseIds.includes(course.id)) {
+            await this.enrollStudent({
+              studentId: student.id,
+              courseId: course.id,
+            });
+            console.log(`✅ Enrolled student in ${course.code}`);
+          }
+        }
       }
-
-      // Create teacher account if it doesn't exist
-      if (!existingEmails.includes('teacher@college.edu')) {
-        const teacherHashed = await bcrypt.hash('teacher123', 10);
-      await db.insert(users).values({
-        id: 'demo-teacher-1',
-        email: 'teacher@college.edu',
-        firstName: 'John',
-        lastName: 'Professor',
-        role: 'TEACHER',
-          password: teacherHashed,
-        department: 'Computer Science',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      }
-
-      // Create student account if it doesn't exist
-      if (!existingEmails.includes('student@college.edu')) {
-        const studentHashed = await bcrypt.hash('student123', 10);
-      await db.insert(users).values({
-        id: 'demo-student-1', 
-        email: 'student@college.edu',
-        firstName: 'Jane',
-        lastName: 'Student',
-        role: 'STUDENT',
-          password: studentHashed,
-        studentId: 'CS2024001',
-        department: 'Computer Science',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      }
-
-      console.log('Demo accounts created successfully');
     } catch (error) {
-      console.log('Demo accounts creation failed:', error);
+      console.log('Error enrolling demo student:', error);
     }
   }
 

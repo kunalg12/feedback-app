@@ -1,13 +1,18 @@
-import "dotenv/config";
+import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), debug: true });
+
 import mysql from 'mysql2/promise';
 import { drizzle } from 'drizzle-orm/mysql2';
 import * as schema from "@shared/schema";
 
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to set it in .env?",
-  );
+  throw new Error("DATABASE_URL must be set. Did you forget to set it in .env?");
 }
 
-export const pool = await mysql.createPool(process.env.DATABASE_URL);
+// Debug log (remove after testing)
+console.log('Loaded DATABASE_URL:', process.env.DATABASE_URL);
+
+export const pool = mysql.createPool(process.env.DATABASE_URL as string);
 export const db = drizzle(pool, { schema, mode: 'default' });
